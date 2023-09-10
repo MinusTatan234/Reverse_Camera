@@ -3,8 +3,49 @@ import tkinter as tk
 from tkinter import Canvas
 from PIL import Image, ImageTk
 from datetime import datetime
-from pynput import keyboard
+from pynput import keyboard 
 import threading
+import time
+import numpy as np
+import math
+
+
+# Variable donde se guarda el rastreo del ultimo cambio de vista
+last_view_change_time = 0
+
+# Intervalo de tiempo en segundos
+view_change_interval = 2  # Cambio de vista permitido cada 2 segundos
+
+#Define las dimensiones del trapecio (0-1)
+base_mayor = 0.6
+base_menor = 0.4
+altura = 0.35
+vertical_offset = 0.6
+
+
+class TimerThread(threading.Thread):
+    def __init__(self):
+        super().__init__()
+        self.start_time = None
+        self.end_time = None
+        self.exit_event = threading.Event()
+        self.time_elapsed = 0
+
+    def run(self):
+        self.start_time = time.time()
+        while not self.exit_event.is_set():
+            self.time_elapsed = time.time() - self.start_time
+            time.sleep(0.001)  # update time every second
+
+    def stop(self):
+        self.exit_event.set()
+        self.end_time = time.time()
+
+    def get_elapsed_time(self):
+        if self.end_time is not None:
+            return self.end_time - self.start_time
+        else:
+            return self.time_elapsed 
 
 
 # Función para mostrar la hora en el canvas de Tkinter
@@ -17,14 +58,18 @@ def show_hour():
 
 # Función para cambiar entre la hora y el video de la cámara
 def change_view():
-    global showing_hour
-    showing_hour = not showing_hour
+    global showing_hour, last_view_change_time
+    current_time = time.time()
 
-    if showing_hour:
-        canvas.delete("all")
-        show_hour()
-    else:
-        canvas.delete("all")
+    if current_time - last_view_change_time >= view_change_interval:
+        last_view_change_time = current_time
+        showing_hour = not showing_hour
+
+        if showing_hour:
+            canvas.delete("all")
+            show_hour()
+        else:
+            canvas.delete("all")
 
 
 # Función para capturar y mostrar el video en el lienzo de Tkinter
@@ -36,6 +81,25 @@ def show_video():
             frame = cv2.resize(frame, (window_width, window_height))
             # Convierte el fotograma en formato RGB
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            
+            center_y = window_height // 2
+            
+            # Calcula las coordenadas de los vértices del trapecio en función de las medidas definidas y el desplazamiento vertical
+            trapezoid_height = int(altura * window_height)
+            half_trapezoid_height = trapezoid_height // 2
+            base_mayor_y = center_y + int(vertical_offset * window_height)
+            
+            trapezoid_vertices = [
+                (int(window_width * (0.5 - base_mayor / 2)), window_height),
+                (int(window_width * (0.5 + base_mayor / 2)), window_height),
+                (int(window_width * (0.5 + base_menor / 2)), base_mayor_y - half_trapezoid_height),
+                (int(window_width * (0.5 - base_menor / 2)), base_mayor_y - half_trapezoid_height)
+            ]
+            
+            # Dibuja las líneas del trapecio en la imagen original
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            cv2.polylines(frame_rgb, [np.array(trapezoid_vertices)], isClosed=True, color=(255, 0, 0), thickness=2)
+            
             # Convierte la imagen en un formato compatible con Tkinter
             img = Image.fromarray(frame_rgb)
             img = ImageTk.PhotoImage(image=img)
@@ -47,6 +111,7 @@ def show_video():
 
 # Función para manejar la pulsación de teclas
 def on_key_press(key):
+    global exit
     if key == keyboard.Key.esc:
         exit = True
         root.quit()
@@ -54,10 +119,11 @@ def on_key_press(key):
         change_view()
 
 
+
+
 # Cambia estos valores según tus preferencias
 window_width = 640
 window_height = 360
-
 # Inicializa la ventana de Tkinter
 root = tk.Tk()
 root.title("Reproducción de Video")
