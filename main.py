@@ -1,6 +1,6 @@
 import cv2
 import tkinter as tk
-from tkinter import Canvas
+from tkinter import Canvas, Button, filedialog
 from PIL import Image, ImageTk
 from datetime import datetime
 from pynput import keyboard 
@@ -8,8 +8,11 @@ import threading
 import time
 import numpy as np
 import math
+import subprocess
+import os
 
-
+_DIR = os.path.dirname(__file__)
+_VIDEO_DIR = os.path.join(_DIR, "Videos_Saved")
 # Variable donde se guarda el rastreo del ultimo cambio de vista
 last_view_change_time = 0
 
@@ -20,8 +23,6 @@ view_change_interval = 2  # Cambio de vista permitido cada 2 segundos
 base_mayor = 0.6
 base_menor = 0.4
 altura = 0.35
-vertical_offset = 0.6
-
 
 class TimerThread(threading.Thread):
     def __init__(self):
@@ -51,14 +52,18 @@ class TimerThread(threading.Thread):
 # Función para mostrar la hora en el canvas de Tkinter
 def show_hour():
     canvas.delete("all")  # Borra todo en el canvas
+
     current_hour = datetime.now().strftime("%H:%M:%S")
     canvas.create_text(window_width // 2, window_height // 2, text=current_hour, font=("Helvetica", 48), fill="white")
     canvas.after(1000, show_hour)  # Cada segundo la hora se actualiza
 
+def open_list_folder():
+    global folder_path
+    folder_path = filedialog.askdirectory()
 
 # Función para cambiar entre la hora y el video de la cámara
 def change_view():
-    global showing_hour, last_view_change_time
+    global showing_hour, last_view_change_time, camera_active
     current_time = time.time()
 
     if current_time - last_view_change_time >= view_change_interval:
@@ -68,13 +73,20 @@ def change_view():
         if showing_hour:
             canvas.delete("all")
             show_hour()
+            folder_btn.config(state=tk.NORMAL)
+            folder_btn.place(x=window_width - 120, y=10)
+            camera_active = False
         else:
             canvas.delete("all")
+            folder_btn.config(state=tk.DISABLED)
+            folder_btn.place(x=3000, y=10)
+            camera_active = True
 
 
 # Función para capturar y mostrar el video en el lienzo de Tkinter
 def show_video():
-    if not showing_hour:
+    global camera_active
+    if not showing_hour and camera_active:
         ret, frame = cap.read()
         if ret:
             # Escala el fotograma al tamaño de la ventana
@@ -82,18 +94,12 @@ def show_video():
             # Convierte el fotograma en formato RGB
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             
-            center_y = window_height // 2
-            
-            # Calcula las coordenadas de los vértices del trapecio en función de las medidas definidas y el desplazamiento vertical
-            trapezoid_height = int(altura * window_height)
-            half_trapezoid_height = trapezoid_height // 2
-            base_mayor_y = center_y + int(vertical_offset * window_height)
-            
+            # Calcula las coordenadas de los vértices del trapecio en función de las medidas definidas
             trapezoid_vertices = [
                 (int(window_width * (0.5 - base_mayor / 2)), window_height),
                 (int(window_width * (0.5 + base_mayor / 2)), window_height),
-                (int(window_width * (0.5 + base_menor / 2)), base_mayor_y - half_trapezoid_height),
-                (int(window_width * (0.5 - base_menor / 2)), base_mayor_y - half_trapezoid_height)
+                (int(window_width * (0.5 + base_menor / 2)), int(window_height * (1 - altura))),
+                (int(window_width * (0.5 - base_menor / 2)), int(window_height * (1 - altura)))
             ]
             
             # Dibuja las líneas del trapecio en la imagen original
@@ -119,14 +125,12 @@ def on_key_press(key):
         change_view()
 
 
-
-
 # Cambia estos valores según tus preferencias
 window_width = 640
 window_height = 360
 # Inicializa la ventana de Tkinter
 root = tk.Tk()
-root.title("Reproducción de Video")
+root.title("Reproducción de Video") 
 
 # Inicializa la cámara (cambia el índice a 0 si quieres usar la cámara predeterminada)
 cap = cv2.VideoCapture(0)  # Utiliza la cámara predeterminada (cambia el índice si es necesario)
@@ -137,6 +141,9 @@ root.geometry(f"{window_width}x{window_height}")
 # Inicializa el canvas para mostrar la hora al inicio
 canvas = Canvas(root, width=window_width, height=window_height, bg='black')
 canvas.pack()
+
+folder_btn = Button(root, text="Open Folder", command=open_list_folder, state=tk.NORMAL)
+folder_btn.place(x=window_width - 120, y=10)
 
 # Bandera para controlar qué se está mostrando True para que se muestre primero la fecha
 showing_hour = True
